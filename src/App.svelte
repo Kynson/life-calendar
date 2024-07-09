@@ -1,21 +1,71 @@
 <!-- App logics -->
 <script lang="ts">
   import CalendarGenerator from '@lib/calendar-generator';
+  import { fontVariantToHumanReadableRepresentation } from '@lib/font-variant-utils';
 
   import Input from './components/Input.svelte';
   import Separator from './components/Separator.svelte';
   import Button from './components/Button.svelte';
+  import Select from './components/Select.svelte';
+
+  import { onMount } from 'svelte';
 
   import type { GenerateConfigurations } from '@lib/calendar-generator';
+  import type { Fonts } from '@lib/font-loader';
+
+  type ConfigurationsFromData = Omit<GenerateConfigurations, 'numberOfYears' | 'direction'> & {
+    numberOfYears: string,
+    direction: boolean
+  };
 
   const calendarGenerator = new CalendarGenerator();
-  calendarGenerator.initialize();
+
+  // Proxy used to serialize and deserialize configurations to match what are stored in form controls
+  let configurationsFromData = new Proxy(
+    calendarGenerator.configurations,
+    {
+      set(target, properity, value) {
+        let serializedValue = value;
+
+        // Convert numberOfYears to number
+        if (properity === 'numberOfYears') {
+          serializedValue = parseInt(value, 10);
+        }
+
+        if (properity === 'direction') {
+          serializedValue = value ? 'vertical' : 'horizontal';
+        }
+
+        target[properity] = serializedValue;
+
+        return true;
+      },
+      get(target, properity) {
+        // Convert numberOfYears to string
+        if (properity === 'numberOfYears') {
+          return target[properity].toString();
+        }
+
+        if (properity === 'direction') {
+          return target[properity] === 'vertical';
+        }
+
+        return target[properity];
+      }
+    }
+  ) as any as ConfigurationsFromData;
+
+  let availableFonts: Fonts = {};
+  let availableFontFamilies: (keyof Fonts)[] = [];
+
+  $: selectedFontFamilyVariants = availableFonts[configurationsFromData.fontFamily]?.variants || [];
 
   let generatedCalendarSVG: Promise<string>;
   let isInitialGeneration = true;
 
-  async function generateCalendar(configurations: GenerateConfigurations): Promise<string> {
-    const result = await calendarGenerator.generate(configurations);
+  async function generateCalendar(): Promise<string> {
+    // Configurations are updated by form controls already
+    const { result } = await calendarGenerator.generate();
 
     if (isInitialGeneration) {
       isInitialGeneration = false;
@@ -24,25 +74,21 @@
     return result;
   }
 
-  function handleFormSubmit({ target }: Event) {
-    const formData = new FormData(target as HTMLFormElement);
-
-    const configurations: Record<string, any> = { fonts: [{ name: 'Inter' }], direction: 'horizontal' };
-    for (const [key, value] of formData) {
-      if (key === 'showTitle') {
-        configurations[key] = true;
-        continue;
-      }
-      if (key === 'vertical') {
-        configurations.direction = 'vertical';
-        continue;
-      }
-
-      configurations[key] = value;
-    }
-
-    generatedCalendarSVG = generateCalendar(configurations as GenerateConfigurations);
+  function handleFormSubmit() {
+    generatedCalendarSVG = generateCalendar();
   }
+
+  function handleFontFamilyInput() {
+    // Select the first varient when the font family is changed
+    configurationsFromData.fontVariant = Object.keys(availableFonts[configurationsFromData.fontFamily])[0];
+  }
+
+  onMount(async () => {
+    await calendarGenerator.initialize();
+
+    availableFonts = calendarGenerator.availableFonts;
+    availableFontFamilies = Object.keys(availableFonts);
+  });
 </script>
 
 <!-- App contents -->
@@ -60,14 +106,31 @@
 <section id="generator" class="flex flex-wrap">
   <form class="flex flex-column small-text flex-justify-center" on:submit|preventDefault={handleFormSubmit}>
     <h5>General</h5>
-    <Input type="date" label="Date of Birth" name="dateOfBirth"></Input>
-    <Input type="text" label="Title" value="Life Calendar" name="title"></Input>
+    <Input type="date" label="Date of Birth" name="dateOfBirth" bind:value={configurationsFromData.dateOfBirth}></Input>
+    <Input type="text" label="Title" name="title" disabled={!configurationsFromData.showTitle} bind:value={configurationsFromData.title}></Input>
+    <Input type="number" label="Number of Years" name="numberOfYears" bind:value={configurationsFromData.numberOfYears}></Input>
+    <Input type="checkbox" label="Show Title" name="showTitle" bind:checked={configurationsFromData.showTitle}></Input>
+    <Input type="checkbox" label="Show Event Legends" name="showEventLegends" bind:checked={configurationsFromData.showEventLegends}></Input>
+    <Input type="checkbox" label="Show Progress" name="showProgress" bind:checked={configurationsFromData.showProgress}></Input>
+    <Input type="checkbox" label="Enable Emoji Support" name="enableEmojiSupport" bind:checked={configurationsFromData.enableEmojiSupport}></Input>
     <h5>Theme</h5>
-    <Input type="checkbox" label="Show Title" name="showTitle"></Input>
-    <Input type="checkbox" label="Vertical" name="vertical"></Input>
-    <Input type="color" label="Filled Cell Color" name="filledCellColor"></Input>
-    <Input type="color" label="Non-filled Cell Color" name="unfilledCellColor"></Input>
-    <Button variant="outlined">Add</Button>
+    <Input type="color" label="Filled Cell Color" name="filledCellColor" bind:value={configurationsFromData.filledCellColor}></Input>
+    <Input type="color" label="Unfilled Cell Color" name="unfilledCellColor" bind:value={configurationsFromData.unfilledCellColor}></Input>
+    <Input type="color" label="Title Color" name="titleColor" disabled={!configurationsFromData.showTitle} bind:value={configurationsFromData.titleColor}></Input>
+    <Input type="color" label="Event Legends Color" name="eventLegendsColor" disabled={!configurationsFromData.showEventLegends} bind:value={configurationsFromData.eventLegendsColor}></Input>
+    <Input type="color" label="Progress Color" name="progressColor" disabled={!configurationsFromData.showProgress} bind:value={configurationsFromData.progressColor}></Input>
+    <Input type="checkbox" label="Vertical" name="vertical" bind:checked={configurationsFromData.direction}></Input>
+    <Select label="Font Family" name="fontFamily" bind:value={configurationsFromData.fontFamily} on:input={handleFontFamilyInput}>
+      {#each availableFontFamilies as fontFamily}
+        <option value={fontFamily} selected={fontFamily === configurationsFromData.fontFamily}>{fontFamily}</option>
+      {/each}
+    </Select>
+    <Select label="Font Variant" name="fontVariant" bind:value={configurationsFromData.fontVariant}>
+      {#each selectedFontFamilyVariants as fontVariant}
+        <option value={fontVariant} selected={fontVariant === configurationsFromData.fontVariant}>{fontVariantToHumanReadableRepresentation(fontVariant)}</option>
+      {/each}
+    </Select>
+    <Button variant="outlined">Add Event</Button>
     <Separator>Or upload an existing calendar</Separator>
     <Input type="file" label="Calendar"></Input>
     <Button type="submit">Generate!</Button>

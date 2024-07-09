@@ -17,37 +17,7 @@ interface FontAPIResponse {
   items: RawFontInfo[];
 }
 
-type Fonts = Record<string, RawFontInfo["files"]>
-
-// export async function fetchFonts(): Promise<Font[]> {
-//   // The API key is ok to be public
-//   const fontAPIResponse: FontAPIResponse = await fetch('https://www.googleapis.com/webfonts/v1/webfonts?key=AIzaSyB-n0oQkOwrP49lhJF5-jsNTptZg6kQowY')
-//     .then((response) => response.json());
-  
-//   // Something went wrong when fetching the font list
-//   if (!fontAPIResponse.items || !Array.isArray(fontAPIResponse.items)) {
-//     throw new Error(`Invalid response from Google Font API: \n${fontAPIResponse}`);
-//   }
-
-//   const fonts: Font[] = [];
-
-//   for (const { family, variants, files } of fontAPIResponse.items) {
-//     fonts.push(
-//       {
-//         family,
-//         variants,
-//         files
-//       }
-//     );
-//   }
-
-//   return fonts;
-// }
-
-// export async function loadFont(fontURL: string): Promise<ArrayBuffer> {
-//   return await fetch(fontURL)
-//     .then((response) => response.arrayBuffer());
-// }
+export type Fonts = Record<string, Pick<RawFontInfo, 'files' | 'variants'>>
 
 export default class FontLoader {
   private fonts: Fonts = {};
@@ -83,31 +53,32 @@ export default class FontLoader {
 
     const fonts: Fonts = {};
 
-    for (const { family, files } of fontAPIResponse.items) {
-      fonts[family] = files;
+    for (const { family, files, variants } of fontAPIResponse.items) {
+      fonts[family] = {
+        files,
+        variants
+      };
     }
 
     this.fonts = fonts;
     this.isFontsFetched = true;
   }
 
-  async loadFont(name: string, variant: string): Promise<ArrayBuffer> {
-    // Google fonts uses regular to represent 400
-    const normalizedVariant = variant === '400' ? 'regular' : variant;
-
+  async loadFont(family: string, variant: string): Promise<ArrayBuffer> {
     if (!this.isFontsFetched) {
       throw Error('Fonts has not been fetched, you may need to call fetchFonts first')
     }
 
-    if (!(name in this.fonts)) {
-      throw Error(`The requested font '${name}' does not exist`);
+    if (!(family in this.fonts)) {
+      throw Error(`The requested font '${family}' does not exist`);
     }
 
-    if (!(normalizedVariant in this.fonts[name])) {
-      throw Error(`The requested varient '${normalizedVariant}' for '${name}' does not exist`);
+    if (!this.fonts[family].variants.includes(variant)) {
+      console.log(this.fonts[family].variants)
+      throw Error(`The requested varient '${variant}' for '${family}' does not exist`);
     }
 
-    return await fetch(this.fonts[name][normalizedVariant])
+    return await fetch(this.fonts[family].files[variant])
       .then((response) => response.arrayBuffer());
   }
 }
