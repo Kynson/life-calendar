@@ -22,6 +22,9 @@
   export let value: string = '';
   export let files: FileList = null;
 
+  let clazz = '';
+  export { clazz as class };
+
   function assignDefaultValue() {
     switch (type) {
       case 'date':
@@ -64,7 +67,7 @@
 </script>
 
 <!-- Input contents -->
-<label class="flex flex-space-between">
+<label class="flex flex-space-between {clazz}">
   <span>{label}</span>
   <div class="input-container">
     <input bind:this={input} on:input={handleInput} {value} {disabled} {placeholder} {type} {name} {...(type === 'checkbox' && {checked})}>

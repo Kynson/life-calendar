@@ -4,10 +4,13 @@
   export let name = '';
 
   export let value: string = '';
+
+  let clazz = '';
+  export { clazz as class };
 </script>
 
 <!-- Select contents -->
-<label class="flex flex-column">
+<label class="flex flex-column {clazz}">
   <span>{label}</span>
   <div class="flex flex-align-center">
     <select {name} bind:value={value} on:input>

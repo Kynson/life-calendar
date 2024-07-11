@@ -23,6 +23,13 @@ interface CellFillRule {
   startingFrom: number
 }
 
+export interface CalendarEvent {
+  name: string,
+  from: string,
+  to: string,
+  color: string
+}
+
 export interface GenerateConfigurations {
   dateOfBirth: string,
   filledCellColor: string,
@@ -30,6 +37,7 @@ export interface GenerateConfigurations {
   direction: GridDirection,
   title: string,
   numberOfYears: number,
+  events: CalendarEvent[],
   titleColor: string,
   eventLegendsColor: string,
   progressColor: string,
@@ -48,12 +56,21 @@ const GRID_CELL_BORDER_RADIUS = 1;
 const GRID_GAP = 1;
 const GRID_MARGIN_BOTTOM = 8;
 
-const TITLE_FONT_SIZE = 18;
+const TITLE_FONT_SIZE = BASE_FONT_SIZE * 1.2;
 const TITLE_MARGIN_BOTTOM = 16;
 const TITLE_LINE_HEIGHT = TITLE_FONT_SIZE + 2;
 
 const PROGRESS_FONT_SIZE = BASE_FONT_SIZE * 0.833;
 const PROGRESS_LINE_HEIGHT = BASE_FONT_SIZE + 2;
+const PROGRESS_MARGIN_BOTTOM = 16;
+
+const COLOR_INDICATOR_AND_EVENT_NAME_GAP = 8;
+const EVENT_COLOR_INDICATOR_SIZE = 16;
+const EVENT_COLOR_INDICATOR_BORDER_RADIUS = 4;
+const EVENT_LEGEND_WIDTH = 291;
+const EVENT_LEGEND_GAP = 16;
+const EVENT_LEGEND_LINE_HEIGHT = BASE_FONT_SIZE + 2;
+const EVENT_LEGEND_LINE_MARGIN_BOTTOM = 8;
 
 const NUMBER_OF_WEEKS_IN_YEAR = 52;
 
@@ -87,6 +104,7 @@ export default class CalendarGenerator {
     direction: 'horizontal',
     title: 'Life Calendar',
     numberOfYears: 100,
+    events: [],
     titleColor: '#ffffff',
     eventLegendsColor: '#ffffff',
     progressColor: '#ffffff',
@@ -137,6 +155,64 @@ export default class CalendarGenerator {
       },
       children
     );
+  }
+
+  private generateEventLegend(color: string, eventName: string) {
+    const { eventLegendsColor } = this.configurations;
+
+    const container = this.generateFlexbox(
+      'row',
+      COLOR_INDICATOR_AND_EVENT_NAME_GAP,
+      EVENT_LEGEND_WIDTH
+    );
+
+    container.props.children = [
+      this.generateCell(color, EVENT_COLOR_INDICATOR_SIZE, EVENT_COLOR_INDICATOR_SIZE, EVENT_COLOR_INDICATOR_BORDER_RADIUS),
+      reactLikeElementGenerator.p(
+        {
+          margin: 0,
+          color: eventLegendsColor,
+          lineHeight: `${EVENT_LEGEND_LINE_HEIGHT}px`
+        },
+        eventName
+      )
+    ];
+
+    return container;
+  }
+
+  private generateEventLegends(): ReactLikeElement[] {
+    const { events, direction } = this.configurations;
+    const isHorizontal = direction === 'horizontal';
+
+    const lines = [];
+
+    let index = 0;
+    while (index < events.length) {
+      const isLastLine = (isHorizontal && events.length % 2 === 0 && index === events.length - 2)
+      || (isHorizontal && events.length % 2 !== 0 && index === events.length - 1)
+      || (!isHorizontal && index === events.length - 1);
+
+      const line = this.generateFlexbox(
+        'row',
+        EVENT_LEGEND_GAP,
+        '100%',
+        `${EVENT_LEGEND_LINE_HEIGHT}px`,
+        isLastLine ? 0 : EVENT_LEGEND_LINE_MARGIN_BOTTOM
+      );
+
+      for (let i = 0; i < (isHorizontal ? 2 : 1) && index < events.length; i++) {
+        const { name, color } = events[index++];
+
+        (line.props.children as ReactLikeElement[]).push(
+          this.generateEventLegend(color, name)
+        );
+      }
+
+      lines.push(line);
+    }
+
+    return lines;
   }
 
   private isValidCellFillRules(cellFillRules: CellFillRule[]) {
@@ -214,23 +290,28 @@ export default class CalendarGenerator {
   }
 
   private computeCalendarDimension() {
-    const { direction, showTitle, showProgress } = this.configurations;
+    const { direction, showTitle, showProgress, showEventLegends, events } = this.configurations;
+    const isHorizontal = direction === 'horizontal';
 
     const gridDimension = this.computeGridDimension();
     const titleHeight = showTitle ? TITLE_LINE_HEIGHT + TITLE_MARGIN_BOTTOM : 0;
     // Grid margin only apply when progress is shown
     const progressHeight = showProgress ? PROGRESS_LINE_HEIGHT + GRID_MARGIN_BOTTOM : 0;
+    const numberOfEventLegendLines = Math.ceil(events.length / (isHorizontal ? 2 : 1));
+    const eventLegendsHeight = showEventLegends && events.length > 0 
+      ? EVENT_LEGEND_LINE_HEIGHT * numberOfEventLegendLines + EVENT_LEGEND_LINE_MARGIN_BOTTOM * (numberOfEventLegendLines - 1) + PROGRESS_MARGIN_BOTTOM
+      : 0;
 
-    if (direction === 'horizontal') {
+    if (isHorizontal) {
       return {
         width: gridDimension[0],
-        height: gridDimension[1] + titleHeight + progressHeight + 1
+        height: gridDimension[1] + titleHeight + progressHeight + eventLegendsHeight + 1
       }
     }
 
     return {
       width: gridDimension[1],
-      height: gridDimension[0] + titleHeight + progressHeight + 1 + 200
+      height: gridDimension[0] + titleHeight + progressHeight + eventLegendsHeight + 1
     };
   }
 
@@ -262,6 +343,7 @@ export default class CalendarGenerator {
       direction,
       title,
       numberOfYears,
+      events,
       titleColor,
       eventLegendsColor,
       progressColor,
@@ -317,13 +399,24 @@ export default class CalendarGenerator {
             alignSelf: 'flex-end',
             fontSize: `${PROGRESS_FONT_SIZE}px`,
             lineHeight: `${PROGRESS_LINE_HEIGHT}px`,
-            margin: 0,
+            margin: `0 0 ${showEventLegends && events.length > 0 ? PROGRESS_MARGIN_BOTTOM : 0}px 0`,
             color: progressColor
           },
           `${numberOfWeeksElapsed}/${numberOfYears * NUMBER_OF_WEEKS_IN_YEAR}`
         )
       )
     }
+
+    // calendarContents.push(
+    //   this.generateEventLegend('#445566', 'This is a test')
+    // )
+    if (showEventLegends && events.length > 0) {
+      console.log(this.generateEventLegends());
+      calendarContents.push(
+        ...this.generateEventLegends()
+      );
+    }
+
 
     const rawGeneratedSVG = await satori(
       reactLikeElementGenerator.div(
@@ -333,7 +426,7 @@ export default class CalendarGenerator {
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          flexWrap: 'wrap',
+          // flexWrap: 'wrap',
         },
         calendarContents
       ),
@@ -341,6 +434,7 @@ export default class CalendarGenerator {
         width,
         height,
         fonts: [loadedFont],
+        debug: true,
         async loadAdditionalAsset(languageCode, segment) {
           if (languageCode !== 'emoji' || !enableEmojiSupport) {
             return;

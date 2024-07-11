@@ -2,30 +2,44 @@
 <script lang="ts">
   import type { HTMLButtonAttributes } from "svelte/elements";
 
-  export let variant: 'filled' | 'outlined' = 'filled';
+  export let variant: 'filled' | 'outlined' | 'mini-icon' = 'filled';
   export let type: HTMLButtonAttributes['type'] = 'button';
+  
+  let clazz = '';
+  export { clazz as class };
 </script>
 
 <!-- Button contents -->
-<button {type} class:filled={variant === 'filled'} class:outlined={variant === 'outlined'} on:click>
+<button {type} class:filled={variant === 'filled'} class:outlined={variant === 'outlined'} class:mini-icon={variant === 'mini-icon'} class="small-text {clazz}" on:click>
   <slot></slot>
 </button>
 
 <!-- Button styles -->
 <style>
   button {
-    border-radius: 8px;
     padding: 0.5rem 1.25rem;
-    font-size: inherit;
     font-weight: 500;
     font-family: inherit;
     cursor: pointer;
     transition: background-color .2s;
+  }
+
+  button:is(.filled, .outlined) {
+    border-radius: 8px;
     min-width: 36px;
   }
 
-  button.filled {
+  button:is(.filled, .mini-icon) {
     border: none;
+  }
+
+  button:is(.outlined, .mini-icon) {
+    color: var(--text-color);
+    background-color: transparent;
+    outline: none;
+  }
+
+  button.filled {
     outline-offset: 2px;
     background-color: var(--accent-color);
     color: var(--background-color);
@@ -41,16 +55,26 @@
   
   button.outlined {
     border: 1px solid var(--ring-color);
-    outline: none;
-    background-color: transparent;
-    color: var(--text-color);
   }
-  button.outlined:hover {
+  button:is(.outlined, .mini-icon):hover {
     background-color: color-mix(in srgb, var(--accent-color) 15%, transparent);
   }
-  button.outlined:focus,
-  button.outlined:focus-visible {
+  button:is(.outlined, .mini-icon):focus,
+  button:is(.outlined, .mini-icon):focus-visible {
     background-color: color-mix(in srgb, var(--accent-color) 20%, transparent);
     border: 1px solid var(--accent-color);
+  }
+
+  button.mini-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 4px;
+    /* padding + border */
+    padding: calc(.25rem + 1px);
+  }
+
+  button.mini-icon:focus,
+  button.mini-icon:focus-visible {
+    padding: .25rem;
   }
 </style>

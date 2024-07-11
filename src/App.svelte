@@ -10,7 +10,7 @@
 
   import { onMount } from 'svelte';
 
-  import type { GenerateConfigurations } from '@lib/calendar-generator';
+  import type { GenerateConfigurations, CalendarEvent } from '@lib/calendar-generator';
   import type { Fonts } from '@lib/font-loader';
 
   type ConfigurationsFromData = Omit<GenerateConfigurations, 'numberOfYears' | 'direction'> & {
@@ -55,6 +55,15 @@
     }
   ) as any as ConfigurationsFromData;
 
+  let eventEditFormData: CalendarEvent = {
+    name: '',
+    from: '',
+    to: '',
+    color: '#ffffff'
+  }
+  let currentlyEditingEventIndex: number;
+  let isNewEvent: boolean;
+
   let availableFonts: Fonts = {};
   let availableFontFamilies: (keyof Fonts)[] = [];
 
@@ -62,6 +71,8 @@
 
   let generatedCalendarSVG: Promise<string>;
   let isInitialGeneration = true;
+
+  let eventEditDialog: HTMLDialogElement;
 
   async function generateCalendar(): Promise<string> {
     // Configurations are updated by form controls already
@@ -81,6 +92,39 @@
   function handleFontFamilyInput() {
     // Select the first varient when the font family is changed
     configurationsFromData.fontVariant = Object.keys(availableFonts[configurationsFromData.fontFamily])[0];
+  }
+
+  function handleEventEditButtonClick(eventIndex: number) {
+    isNewEvent = false;
+
+    const { name, from, to, color } = configurationsFromData.events[eventIndex];
+
+    eventEditFormData = { name, from, to, color };
+    currentlyEditingEventIndex = eventIndex;
+
+    eventEditDialog.showModal();
+  }
+
+  function handleEventEditFormClose() {
+    if (eventEditDialog.returnValue === 'cancelled') {
+      return;
+    }
+
+    configurationsFromData.events[currentlyEditingEventIndex] = eventEditFormData;
+  }
+
+  function handleAddEventButtonClick() {
+    isNewEvent = true;
+
+    eventEditFormData = {
+      name: '',
+      from: '',
+      to: '',
+      color: '#ffffff'
+    };
+    currentlyEditingEventIndex = configurationsFromData.events.length;
+
+    eventEditDialog.showModal();
   }
 
   onMount(async () => {
@@ -103,16 +147,36 @@
     <path d="M735.524 424.715L846.894 536.084C848.846 538.036 848.846 541.202 846.894 543.155L620.619 769.429L505.715 654.524L735.524 424.715Z" fill="#90CAF9"/>
   </svg>
 </header>
+<dialog bind:this={eventEditDialog} on:close={handleEventEditFormClose}>
+  <h6>{isNewEvent ? 'Add New Event' : 'Edit Event'}</h6>
+  <form class="flex flex-column small-text" on:submit|preventDefault>
+    <Input type="text" label="Event Name" name="eventName" bind:value={eventEditFormData.name}></Input>
+    <div class="flex flex-gap-1">
+      <Input type="date" label="From" class="flex-grow-1"></Input>
+      <Input type="date" label="To" class="flex-grow-1"></Input>
+    </div>
+    <Input type="color" label="Event Color" name="eventColor" bind:value={eventEditFormData.color}></Input>
+    <div id="event-edit-form-actions-container" class="flex">
+      <Button type="button" variant="outlined" on:click={() => eventEditDialog.close('cancelled')}>Cancel</Button>
+      <Button type="submit" on:click={() => eventEditDialog.close('submit')}>Save</Button>
+    </div>
+  </form>
+</dialog>
 <section id="generator" class="flex flex-wrap">
-  <form class="flex flex-column small-text flex-justify-center" on:submit|preventDefault={handleFormSubmit}>
+  <form id="generation-form" class="flex flex-column small-text flex-justify-center" on:submit|preventDefault={handleFormSubmit}>
     <h5>General</h5>
     <Input type="date" label="Date of Birth" name="dateOfBirth" bind:value={configurationsFromData.dateOfBirth}></Input>
     <Input type="text" label="Title" name="title" disabled={!configurationsFromData.showTitle} bind:value={configurationsFromData.title}></Input>
     <Input type="number" label="Number of Years" name="numberOfYears" bind:value={configurationsFromData.numberOfYears}></Input>
-    <Input type="checkbox" label="Show Title" name="showTitle" bind:checked={configurationsFromData.showTitle}></Input>
-    <Input type="checkbox" label="Show Event Legends" name="showEventLegends" bind:checked={configurationsFromData.showEventLegends}></Input>
-    <Input type="checkbox" label="Show Progress" name="showProgress" bind:checked={configurationsFromData.showProgress}></Input>
-    <Input type="checkbox" label="Enable Emoji Support" name="enableEmojiSupport" bind:checked={configurationsFromData.enableEmojiSupport}></Input>
+    <details>
+      <summary>Advanced</summary>
+      <div id="advanced-general-configurations-container" class="flex flex-column">
+        <Input type="checkbox" label="Show Title" name="showTitle" bind:checked={configurationsFromData.showTitle}></Input>
+        <Input type="checkbox" label="Show Event Legends" name="showEventLegends" bind:checked={configurationsFromData.showEventLegends}></Input>
+        <Input type="checkbox" label="Show Progress" name="showProgress" bind:checked={configurationsFromData.showProgress}></Input>
+        <Input type="checkbox" label="Enable Emoji Support" name="enableEmojiSupport" bind:checked={configurationsFromData.enableEmojiSupport}></Input>
+      </div>
+    </details>
     <h5>Theme</h5>
     <Input type="color" label="Filled Cell Color" name="filledCellColor" bind:value={configurationsFromData.filledCellColor}></Input>
     <Input type="color" label="Unfilled Cell Color" name="unfilledCellColor" bind:value={configurationsFromData.unfilledCellColor}></Input>
@@ -120,17 +184,35 @@
     <Input type="color" label="Event Legends Color" name="eventLegendsColor" disabled={!configurationsFromData.showEventLegends} bind:value={configurationsFromData.eventLegendsColor}></Input>
     <Input type="color" label="Progress Color" name="progressColor" disabled={!configurationsFromData.showProgress} bind:value={configurationsFromData.progressColor}></Input>
     <Input type="checkbox" label="Vertical" name="vertical" bind:checked={configurationsFromData.direction}></Input>
-    <Select label="Font Family" name="fontFamily" bind:value={configurationsFromData.fontFamily} on:input={handleFontFamilyInput}>
-      {#each availableFontFamilies as fontFamily}
-        <option value={fontFamily} selected={fontFamily === configurationsFromData.fontFamily}>{fontFamily}</option>
+    <div class="flex flex-gap-1">
+      <Select label="Font Family" name="fontFamily" bind:value={configurationsFromData.fontFamily} class="flex-grow-1" on:input={handleFontFamilyInput}>
+        {#each availableFontFamilies as fontFamily}
+          <option value={fontFamily} selected={fontFamily === configurationsFromData.fontFamily}>{fontFamily}</option>
+        {/each}
+      </Select>
+      <Select label="Font Variant" name="fontVariant" class="flex-grow-1" bind:value={configurationsFromData.fontVariant}>
+        {#each selectedFontFamilyVariants as fontVariant}
+          <option value={fontVariant} selected={fontVariant === configurationsFromData.fontVariant}>{fontVariantToHumanReadableRepresentation(fontVariant)}</option>
+        {/each}
+      </Select>
+    </div>
+    {#if configurationsFromData.events.length > 0}
+      <h5>Events</h5>
+      {#each configurationsFromData.events as event, index}
+        <div class="flex flex-space-between event-container">
+          <div class="flex">
+            <div class="event-color-indicator" style="background-color: {event.color}"></div>
+            <p>{event.name}</p>
+          </div>
+          <Button variant="mini-icon" class="event-edit-button" on:click={() => handleEventEditButtonClick(index)}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21.731 2.269a2.625 2.625 0 0 0-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 0 0 0-3.712ZM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 0 0-1.32 2.214l-.8 2.685a.75.75 0 0 0 .933.933l2.685-.8a5.25 5.25 0 0 0 2.214-1.32L19.513 8.2Z" />
+            </svg>            
+          </Button>      
+        </div>
       {/each}
-    </Select>
-    <Select label="Font Variant" name="fontVariant" bind:value={configurationsFromData.fontVariant}>
-      {#each selectedFontFamilyVariants as fontVariant}
-        <option value={fontVariant} selected={fontVariant === configurationsFromData.fontVariant}>{fontVariantToHumanReadableRepresentation(fontVariant)}</option>
-      {/each}
-    </Select>
-    <Button variant="outlined">Add Event</Button>
+    {/if}
+    <Button variant="outlined" on:click={handleAddEventButtonClick}>Add Event</Button>
     <Separator>Or upload an existing calendar</Separator>
     <Input type="file" label="Calendar"></Input>
     <Button type="submit">Generate!</Button>
@@ -142,6 +224,10 @@
         <p>{isInitialGeneration ? 'Generating' : 'Re-regenerating'}</p>
       {:then calendarSVG} 
         {@html calendarSVG}
+        <div class="flex flex-gap-1">
+          <Button type="button">Copy link</Button>
+          <Button type="button" variant="outlined">Download Configurations</Button>
+        </div>
       {/await}
     {:else}
       <p>Fill the form and generate your life calendar!</p>
@@ -167,17 +253,89 @@
   }
 
   form {
-    flex: 1 0 calc(100vw - var(--page-padding) * 2);
+    /* flex: 1 0 calc(100vw - var(--page-padding) * 2); */
     gap: 1rem 0;
   }
 
-  form > h5 {
-    margin: 0;
+  details {
+    max-height: calc(1rem + 2px);
+    overflow: hidden;
+    transition: max-height .2s;
+  }
+
+  details[open] {
+    /* Height approx. that fit the content */
+    max-height: 10rem;
+  }
+
+  summary {
+    cursor: pointer;
+  }
+
+  details[open] > summary {
+    margin-bottom: .5rem;
+  }
+
+  dialog {
+    border: none;
+    border-radius: 16px;
+    padding: 1.75rem 1.25rem;
+    background-color: color-mix(in srgb, var(--background-color) 90%, #fff);
+    width: calc(100% - var(--page-padding) * 2);
+    max-width: 512px;
+    /* Will transition to the following when closing */
+    opacity: 0;
+    transform: scale(50%);
+    /* Use the following when major browser support overlay */
+    /* transition: opacity .25s, transform .25s, display .25s allow-discrete, overlay .25s allow-discrete; */
+    transition: all .25s allow-discrete;
+  }
+
+  dialog[open] {
+    opacity: 1;
+    transform: scale(1);
+
+    /* This allow transition from the following to the above ruleset */
+    @starting-style {
+      opacity: 0;
+      transform: scale(50%);
+    }
+  }
+
+  dialog::backdrop {
+    background-color: #ffffff00;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+    transition: all .25s allow-discrete;
+  }
+
+  dialog[open]::backdrop {
+    background-color: #ffffff01;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+
+    @starting-style {
+      background-color: #ffffff00;
+      backdrop-filter: blur(0);
+      -webkit-backdrop-filter: blur(0);
+    }
   }
 
   #generator {
     width: 100%;
     gap: 2.5rem;
+  }
+
+  #generation-form {
+    flex: 1 0 calc(100vw - var(--page-padding) * 2);
+  }
+
+  #generation-form > h5 {
+    margin: 0;
+  }
+
+  #advanced-general-configurations-container {
+    gap: 1rem 0;
   }
 
   #calendar-container {
@@ -190,8 +348,47 @@
     height: 56px;
   }
 
+  #event-edit-form-actions-container {
+    /* We can't style the buttons so we add margin here */
+    margin-top: 1rem;
+    justify-content: flex-end;
+    gap: 0 1.25rem;
+  }
+
+  .event-container p {
+    margin: auto 0;
+  }
+
+  /* Opt out scoping for this, so that it can be leaked to components */
+  :global(.event-edit-button) {
+    opacity: 0;
+    /* Overrides the button's style */
+    transition: background-color .2s, opacity .2s !important;
+  }
+
+  /* Opt out scoping for this, so that it can be leaked to components */
+  .event-container:hover :global(.event-edit-button) {
+    opacity: 1;
+  }
+
+  .event-color-indicator {
+    height: 20px;
+    width: 20px;
+    border-radius: 4px;
+    margin: auto .5rem auto 0;
+  }
+
+  /* Layout utilities specific to App.svelte */
+  /* Opt out scoping for the followings, so that they can be leaked to components */
+  :global(.flex-grow-1) {
+    flex-grow: 1;
+  }
+  :global(.flex-gap-1) {
+    gap: 1rem;
+  }
+
   @media (min-width: 480px) {
-    form {
+    #generation-form {
       flex-basis: 375px;
     }
 
