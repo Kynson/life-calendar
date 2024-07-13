@@ -103,9 +103,32 @@ export default class CalendarGenerator {
   private fontLoader = new FontLoader();
   private isInitialized = false;
 
+  // The following validators checks for types & format only. Reasonability is checked in the generate() function
+  private configurationValidators = {
+    dateOfBirth: (value: any) => typeof value === 'string',
+    title: (value: any) => typeof value === 'string',
+    numberOfYears: (value: any) => typeof value === 'number',
+    showTitle: (value: any) => typeof value === 'boolean',
+    showEventLegends: (value: any) => typeof value === 'boolean',
+    showProgress: (value: any) => typeof value === 'boolean',
+    enableEmojiSupport: (value: any) => typeof value === 'boolean',
+    filledCellColor: (value: any) => typeof value === 'string' && this.isValidColor(value),
+    unfilledCellColor: (value: any) => typeof value === 'string' && this.isValidColor(value),
+    titleColor: (value: any) => typeof value === 'string' && this.isValidColor(value),
+    eventLegendsColor: (value: any) => typeof value === 'string' && this.isValidColor(value),
+    progressColor: (value: any) => typeof value === 'string' && this.isValidColor(value),
+    direction: (value: any) => value === 'horizontal' || value === 'vertical',
+    fontFamily: (value: any) => typeof value === 'string',
+    fontVariant: (value: any) => typeof value === 'string',
+    events: (value: any) => Array.isArray(value) && value.every(({ color }) => this.isValidColor(color))
+  }
+  private validConfigurationKeys = Object.keys(this.configurationValidators);
+
+  // Constructor cannot be async, use initialize instead
+  constructor() {}
+
   // Default configurations
-  // The configurations is intentionally made public as this makes binding to form control easier in front end
-  public configurations: GenerateConfigurations = {
+  private _configurations: GenerateConfigurations = {
     dateOfBirth: new Date().toISOString().split('T')[0],
     filledCellColor: '#90caf9',
     unfilledCellColor: '#e0e0e0',
@@ -124,11 +147,31 @@ export default class CalendarGenerator {
     fontVariant: 'regular'
   }
 
-  // Constructor cannot be async, use initialize instead
-  constructor() {}
+  get configurations() {
+    return this._configurations;
+  }
+
+  // Note that no validation is done when individual configuration is being reassigned 
+  set configurations(value) {
+    this.updateConfigurations(value);
+  }
 
   get availableFonts() {
     return this.fontLoader.availableFonts;
+  }
+
+  private isValidColor(value: any) {
+    return /^#[0-9a-f]{6}|[0-9a-f]{3}$/.test(value);
+  }
+
+  private isValidConfigurations(configurations: Record<any, any>) {
+    for (const [key, value] of Object.entries(configurations)) {
+      if (!this.validConfigurationKeys.includes(key) || !this.configurationValidators[key]?.(value)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private generateCell(fillColor: string, width: number | string, height: number | string, borderRadius: number | string): ReactLikeElement {
@@ -166,7 +209,7 @@ export default class CalendarGenerator {
   }
 
   private generateEventLegend(color: string, eventName: string) {
-    const { eventLegendsColor } = this.configurations;
+    const { eventLegendsColor } = this._configurations;
 
     const container = this.generateFlexbox(
       'row',
@@ -190,7 +233,7 @@ export default class CalendarGenerator {
   }
 
   private generateEventLegends(): ReactLikeElement[] {
-    const { events, direction } = this.configurations;
+    const { events, direction } = this._configurations;
     const isHorizontal = direction === 'horizontal';
 
     const lines = [];
@@ -225,10 +268,6 @@ export default class CalendarGenerator {
 
   private isValidCellFillRules(cellFillRules: CellFillRule[]) {
     for (let i = 0; i < cellFillRules.length; i++) {
-      if (!/^#([0-9a-f]{6}|[0-9a-f]{3})$/.test(cellFillRules[i].color)) {
-        return false;
-      }
-
       if (i >= 1 && cellFillRules[i - 1].startingFrom >= cellFillRules[i].startingFrom) {
         return false;
       }
@@ -237,8 +276,9 @@ export default class CalendarGenerator {
     return true;
   }
 
-  private isValidEvent(from: number, to: number) {
-    return from <= to && from >= 0;
+  // All arguments are in number of miliseconds
+  private isValidEventPeriod(from: number, to: number, birthday: number, currentTime: number) {
+    return from <= to && from >= birthday && to <= currentTime && !isNaN(from) && !isNaN(to);
   }
 
   private isNonOverlappingEvents(eventAFrom: number, eventATo: number, eventBFrom: number, eventBTo: number) {
@@ -246,7 +286,7 @@ export default class CalendarGenerator {
   }
 
   private computeGridDimension() {
-    const { numberOfYears } = this.configurations;
+    const { numberOfYears } = this._configurations;
 
     // [width, height] for horizontal and [height, width] for vertical
     return [
@@ -258,7 +298,7 @@ export default class CalendarGenerator {
   private generateGrid(
     cellFillRules: CellFillRule[]
   ) {
-    const { direction, numberOfYears, showProgress } = this.configurations;
+    const { direction, numberOfYears, showProgress } = this._configurations;
 
     if (cellFillRules.length === 0) {
       throw Error('There must be at least one cell fill rule but found none');
@@ -306,7 +346,7 @@ export default class CalendarGenerator {
   }
 
   private computeCalendarDimension() {
-    const { direction, showTitle, showProgress, showEventLegends, events } = this.configurations;
+    const { direction, showTitle, showProgress, showEventLegends, events } = this._configurations;
     const isHorizontal = direction === 'horizontal';
 
     const gridDimension = this.computeGridDimension();
@@ -350,8 +390,12 @@ export default class CalendarGenerator {
   }
 
   public updateConfigurations(configurations: Partial<GenerateConfigurations>) {
-    this.configurations = {
-      ...this.configurations,
+    if (!this.isValidConfigurations(configurations)) {
+      return;
+    }
+
+    this._configurations = {
+      ...this._configurations,
       ...configurations
     };
   }
@@ -372,7 +416,12 @@ export default class CalendarGenerator {
       enableEmojiSupport,
       fontFamily,
       fontVariant
-    } = this.configurations;
+    } = this._configurations;
+
+    if (numberOfYears < 0) {
+      throw new InputError(`Number of years should larger than or equal to 1, but got ${numberOfYears}`);
+    }
+  
     const { width, height } = this.computeCalendarDimension();
 
     const loadedFont = {
@@ -384,30 +433,31 @@ export default class CalendarGenerator {
     const currentTime = new Date().getTime();
     const birthday = new Date(dateOfBirth).getTime();
 
-    if (birthday > currentTime) {
-      throw new InputError(`The inputted birthday is invalid. Inputted time: ${new Date(currentTime)}, but the current time is ${currentTime}`);
+    if (isNaN(birthday)) {
+      throw new InputError(`The inputted birthday is invalid. Expected a valid date but got: ${dateOfBirth}`)
     }
 
-    const numberOfWeeksElapsed = this.computeNumberOfWeeksElapsed(birthday, currentTime);
+    if (birthday > currentTime) {
+      throw new InputError(`The inputted birthday is invalid. Inputted date: ${dateOfBirth}, but the current time is ${currentTime}`);
+    }
 
-    let invalidEventIndex: number;
-    const isValidEvents = events.every(({ from, to }, index) => {
-      invalidEventIndex = index;
-      return this.isValidEvent(new Date(from).getTime(), new Date(to).getTime());
-    })
+    const numberOfWeeksElapsedSinceBirthday = this.computeNumberOfWeeksElapsed(birthday, currentTime);
 
     const normalizedEvents = events
-      .map(({ from, to, color }) => {
+      .map(({ from, to, color }, index) => {
+        const fromInMiliseconds = new Date(from).getTime();
+        const toInMiliseconds = new Date(to).getTime();
+
+        if (!this.isValidEventPeriod(fromInMiliseconds, toInMiliseconds, birthday, currentTime)) {
+          throw new InputError(`Invalid event period found for event '${events[index].name}'. The event date is malformed or the event period is not reasonable, i.e. happen before your birthday or its end date is before its start date.`)
+        }
+
         return {
-          from: this.computeNumberOfWeeksElapsed(birthday, new Date(from).getTime()),
-          to: this.computeNumberOfWeeksElapsed(birthday, new Date(to).getTime()),
+          from: this.computeNumberOfWeeksElapsed(birthday, fromInMiliseconds),
+          to: this.computeNumberOfWeeksElapsed(birthday, toInMiliseconds),
           color
         }
       });
-
-    if (!isValidEvents) {
-      throw new InputError(`Invalid event '${events[invalidEventIndex].name}' found. Event should start after its end date and after your birthday.`)
-    }
 
     for (let i = 0; i < normalizedEvents.length; i++) {
       const { from: eventAFrom, to: eventATo } = normalizedEvents[i];
@@ -432,11 +482,11 @@ export default class CalendarGenerator {
       );
       unresolvedCellFillRules.set(
         normalizedEvents[i].to,
-        normalizedEvents[i].to >= numberOfWeeksElapsed ? unfilledCellColor : filledCellColor
+        normalizedEvents[i].to >= numberOfWeeksElapsedSinceBirthday ? unfilledCellColor : filledCellColor
       );
     }
 
-    unresolvedCellFillRules.set(numberOfWeeksElapsed, unfilledCellColor);
+    unresolvedCellFillRules.set(numberOfWeeksElapsedSinceBirthday, unfilledCellColor);
 
     const resolvedCellFillRules: CellFillRule[] = [...unresolvedCellFillRules.entries()]
       .map(([startingFrom, color]) => {
@@ -475,7 +525,7 @@ export default class CalendarGenerator {
             margin: `0 0 ${showEventLegends && events.length > 0 ? PROGRESS_MARGIN_BOTTOM : 0}px 0`,
             color: progressColor
           },
-          `${numberOfWeeksElapsed}/${numberOfYears * NUMBER_OF_WEEKS_IN_YEAR}`
+          `${numberOfWeeksElapsedSinceBirthday}/${numberOfYears * NUMBER_OF_WEEKS_IN_YEAR}`
         )
       )
     }
@@ -507,7 +557,7 @@ export default class CalendarGenerator {
             return;
           }
 
-          const { default: loadEmoji } = await import('@lib/emoji-loader');
+          const { default: loadEmoji } = await import('./emoji-loader');
 
           return await loadEmoji(segment);
         },

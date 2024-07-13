@@ -83,6 +83,8 @@
 
   let invalidConfigurationsDialog: HTMLDialogElement;
 
+  let isLinkCopied = false;
+
   function shouldUseIntrinsicCalendarSize(intrinsicWidth: number, intrinsicHeight: number) {
     const calendarContainerWidth = calendarContainer.clientWidth;
     // calendarMaximumHeight is available after onMount
@@ -188,6 +190,22 @@
     downloadLink.click();
   }
 
+  async function handleCopyLinkButtonClick() {
+    const encodedConfigurations = btoa(JSON.stringify(calendarGenerator.configurations))
+      .replaceAll(/\+/g, '-')
+      .replaceAll(/\//g, '_')
+      .replaceAll(/=/g, '');
+  
+    await navigator.clipboard
+      .writeText(`${location.origin}/embed?configurations=${encodedConfigurations}`);
+
+    isLinkCopied = true;
+
+    setTimeout(() => {
+      isLinkCopied = false;
+    }, 2500);
+  }
+
   function isValidColor(value: any) {
     return /^#[0-9a-f]{6}$/.test(value);
   }
@@ -203,32 +221,24 @@
       && isValidColor(value.color);
   }
 
-  const configurationValidators = {
-    dateOfBirth: (value: any) => typeof value === 'string' && isValidDate(value),
-    title: (value: any) => typeof value === 'string',
-    numberOfYears: (value: any) => typeof value === 'string' && parseInt(value, 10) > 0,
-    showTitle: (value: any) => typeof value === 'boolean',
-    showEventLegends: (value: any) => typeof value === 'boolean',
-    showProgress: (value: any) => typeof value === 'boolean',
-    enableEmojiSupport: (value: any) => typeof value === 'boolean',
-    filledCellColor: (value: any) => typeof value === 'string' && isValidColor(value),
-    unfilledCellColor: (value: any) => typeof value === 'string' && isValidColor(value),
-    titleColor: (value: any) => typeof value === 'string' && isValidColor(value),
-    eventLegendsColor: (value: any) => typeof value === 'string' && isValidColor(value),
-    progressColor: (value: any) => typeof value === 'string' && isValidColor(value),
+  const configurationFromDataValidators = {
+    dateOfBirth: (value: any) => isValidDate(value),
+    numberOfYears: (value: any) => typeof value === 'string',
+    filledCellColor: (value: any) => isValidColor(value),
+    unfilledCellColor: (value: any) => isValidColor(value),
+    titleColor: (value: any) => isValidColor(value),
+    eventLegendsColor: (value: any) => isValidColor(value),
+    progressColor: (value: any) => isValidColor(value),
     direction: (value: any) => typeof value === 'boolean',
-    fontFamily: (value: any) => typeof value === 'string',
-    fontVariant: (value: any) => typeof value === 'string',
     events: (value: any) => Array.isArray(value) && value.every(isValidEvent)
   }
 
-  // While the gernerator lib can validate the configurations,
+  // While the generator will validate the configurations,
   // we don't want invalid data to be rendered in the form
-  // This function only checks the structure of the configurations data so that they can be rendered correctly
+  // This function only checks the type and format of the configurations data so that they can be rendered correctly
   function isValidConfigurationFormData(configurations: Record<any, any>) {
     for (const [key, value] of Object.entries(configurations)) {
-      if (!configurationValidators[key](value)) {
-        console.log(key, value)
+      if (configurationFromDataValidators[key] && !configurationFromDataValidators[key](value)) {
         return false;
       }
     }
@@ -239,7 +249,7 @@
   async function handleConfigurationsUpload({ detail: event }: CustomEvent<Event>) {
     const target = event.target as HTMLInputElement;
 
-    const configurationsFile = target.files?.item(0)
+    const configurationsFile = target.files?.item(0);
 
     if (!configurationsFile) {
       return;
@@ -265,8 +275,6 @@
       ...configurationsFromData,
       ...configurations
     }
-    // calendarGenerator.updateConfigurations(configurations);
-    // configurationsFromData = configurationsFromData;
   }
 
   onMount(async () => {
@@ -376,13 +384,13 @@
           {@html svg}
         </div>
       {:catch error}
-        <p>Failed to load the calendar. {error}</p>
+        <p>Failed to generate the calendar. {error.message || ''}</p>
       {/await}
     {:else}
       <p>Fill the form and generate your life calendar!</p>
     {/if}
     <div class="flex flex-gap-1" class:invisible={isCalendarGenerating || !generatedCalendarSVG} bind:this={calendarActionButtonsContainer}>
-      <Button>Copy link</Button>
+      <Button on:click={handleCopyLinkButtonClick}>{isLinkCopied ? 'Copied!' : 'Copy link'}</Button>
       <Button variant="outlined" on:click={handleDownloadConfigurationsButtonClick}>Download Configurations</Button>
     </div>
   </div>
@@ -396,7 +404,6 @@
 
 <!-- App styles -->
 <style>
-  /* TODO: Finalize generator svg size, header size */
   header {
     margin-bottom: 3.5rem;
   }
@@ -406,7 +413,6 @@
   }
 
   form {
-    /* flex: 1 0 calc(100vw - var(--page-padding) * 2); */
     gap: 1rem 0;
   }
 
@@ -493,7 +499,6 @@
 
   #calendar-container {
     flex: 2 0 calc(100vw - var(--page-padding) * 2);
-    /* min-height: 100vh; */
   }
 
   #logo {
@@ -504,11 +509,6 @@
   #event-edit-form-actions-container {
     justify-content: flex-end;
     gap: 0 1.25rem;
-  }
-
-  .dialog-actions-container {
-    /* We can't style the buttons so we add margin here */
-    margin-top: 1rem;
   }
 
   /* Opt out scoping for this, so that it can be leaked to components */
