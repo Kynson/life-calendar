@@ -75,6 +75,10 @@ h6 {
   font-size: .833rem;
 }
 
+.low-emphasis {
+  color: color-mix(in srgb, var(--text-color) 80%, transparent);
+}
+
 /* Layout utilities classes */
 .flex {
   display: flex;

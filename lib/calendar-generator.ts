@@ -72,7 +72,15 @@ const EVENT_LEGEND_GAP = 16;
 const EVENT_LEGEND_LINE_HEIGHT = BASE_FONT_SIZE + 2;
 const EVENT_LEGEND_LINE_MARGIN_BOTTOM = 8;
 
+const MIN_WIDTH = 300;
+
 const NUMBER_OF_WEEKS_IN_YEAR = 52;
+
+export class InputError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
 
 const reactLikeElementGenerator = new Proxy<ReactLikeElementGenerator>(
   {} as ReactLikeElementGenerator,
@@ -229,6 +237,14 @@ export default class CalendarGenerator {
     return true;
   }
 
+  private isValidEvent(from: number, to: number) {
+    return from <= to && from >= 0;
+  }
+
+  private isNonOverlappingEvents(eventAFrom: number, eventATo: number, eventBFrom: number, eventBTo: number) {
+    return (eventAFrom < eventBFrom && eventATo < eventBFrom) || (eventAFrom > eventBFrom && eventAFrom > eventBTo);
+  }
+
   private computeGridDimension() {
     const { numberOfYears } = this.configurations;
 
@@ -304,15 +320,20 @@ export default class CalendarGenerator {
 
     if (isHorizontal) {
       return {
-        width: gridDimension[0],
+        width: Math.max(gridDimension[0], MIN_WIDTH),
         height: gridDimension[1] + titleHeight + progressHeight + eventLegendsHeight + 1
       }
     }
 
     return {
-      width: gridDimension[1],
+      width: Math.max(gridDimension[1], MIN_WIDTH),
       height: gridDimension[0] + titleHeight + progressHeight + eventLegendsHeight + 1
     };
+  }
+
+  private computeNumberOfWeeksElapsed(from: number, to: number) {
+    const difference = to - from;
+    return Math.floor(difference / (7 * 24 * 60 * 60 * 1000)) + 1;
   }
 
   public async initialize() {
@@ -340,12 +361,10 @@ export default class CalendarGenerator {
       dateOfBirth,
       filledCellColor,
       unfilledCellColor,
-      direction,
       title,
       numberOfYears,
       events,
       titleColor,
-      eventLegendsColor,
       progressColor,
       showTitle,
       showEventLegends,
@@ -364,8 +383,69 @@ export default class CalendarGenerator {
 
     const currentTime = new Date().getTime();
     const birthday = new Date(dateOfBirth).getTime();
-    const difference = currentTime - birthday;
-    const numberOfWeeksElapsed = Math.floor(difference / (7 * 24 * 60 * 60 * 1000)) + 1;
+
+    if (birthday > currentTime) {
+      throw new InputError(`The inputted birthday is invalid. Inputted time: ${new Date(currentTime)}, but the current time is ${currentTime}`);
+    }
+
+    const numberOfWeeksElapsed = this.computeNumberOfWeeksElapsed(birthday, currentTime);
+
+    let invalidEventIndex: number;
+    const isValidEvents = events.every(({ from, to }, index) => {
+      invalidEventIndex = index;
+      return this.isValidEvent(new Date(from).getTime(), new Date(to).getTime());
+    })
+
+    const normalizedEvents = events
+      .map(({ from, to, color }) => {
+        return {
+          from: this.computeNumberOfWeeksElapsed(birthday, new Date(from).getTime()),
+          to: this.computeNumberOfWeeksElapsed(birthday, new Date(to).getTime()),
+          color
+        }
+      });
+
+    if (!isValidEvents) {
+      throw new InputError(`Invalid event '${events[invalidEventIndex].name}' found. Event should start after its end date and after your birthday.`)
+    }
+
+    for (let i = 0; i < normalizedEvents.length; i++) {
+      const { from: eventAFrom, to: eventATo } = normalizedEvents[i];
+  
+      for (let j = i + 1; j < events.length; j++) {
+        const { from: eventBFrom, to: eventBTo } = normalizedEvents[j];
+  
+        if (!this.isNonOverlappingEvents(eventAFrom, eventATo, eventBFrom, eventBTo)) {
+          throw new InputError(`Events '${events[i].name}' and '${events[j].name} overlap with each other in terms of week.`)
+        }
+      }
+    }
+
+    const unresolvedCellFillRules = new Map<number, string>();
+
+    unresolvedCellFillRules.set(0, filledCellColor);
+
+    for (let i = 0; i < normalizedEvents.length; i++) {
+      unresolvedCellFillRules.set(
+        normalizedEvents[i].from - 1,
+        normalizedEvents[i].color
+      );
+      unresolvedCellFillRules.set(
+        normalizedEvents[i].to,
+        normalizedEvents[i].to >= numberOfWeeksElapsed ? unfilledCellColor : filledCellColor
+      );
+    }
+
+    unresolvedCellFillRules.set(numberOfWeeksElapsed, unfilledCellColor);
+
+    const resolvedCellFillRules: CellFillRule[] = [...unresolvedCellFillRules.entries()]
+      .map(([startingFrom, color]) => {
+        return {
+          color,
+          startingFrom
+        }
+      })
+      .sort((a, b) => a.startingFrom - b.startingFrom);
 
     const calendarContents: ReactLikeElement[] = [];
     
@@ -383,14 +463,7 @@ export default class CalendarGenerator {
       );
     }
 
-    calendarContents.push(
-      this.generateGrid(
-        [
-          { color: filledCellColor, startingFrom: 0 },
-          { color: unfilledCellColor, startingFrom: numberOfWeeksElapsed }
-        ]
-      )
-    );
+    calendarContents.push(this.generateGrid(resolvedCellFillRules));
 
     if (showProgress) {
       calendarContents.push(
@@ -407,11 +480,7 @@ export default class CalendarGenerator {
       )
     }
 
-    // calendarContents.push(
-    //   this.generateEventLegend('#445566', 'This is a test')
-    // )
     if (showEventLegends && events.length > 0) {
-      console.log(this.generateEventLegends());
       calendarContents.push(
         ...this.generateEventLegends()
       );
@@ -426,7 +495,6 @@ export default class CalendarGenerator {
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          // flexWrap: 'wrap',
         },
         calendarContents
       ),
@@ -434,7 +502,6 @@ export default class CalendarGenerator {
         width,
         height,
         fonts: [loadedFont],
-        debug: true,
         async loadAdditionalAsset(languageCode, segment) {
           if (languageCode !== 'emoji' || !enableEmojiSupport) {
             return;

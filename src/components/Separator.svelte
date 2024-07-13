@@ -1,7 +1,7 @@
 <!-- Separator contents -->
 <div class="flex flex-justify-center flex-align-center">
   <hr>
-  <span>
+  <span class="low-emphasis">
     <slot></slot>
   </span>
 </div>
@@ -22,7 +22,7 @@
 
   div > span {
     /* position: absolute; */
-    color: color-mix(in srgb, var(--text-color) 80%, transparent);
+    /* color: color-mix(in srgb, var(--text-color) 80%, transparent); */
     background-color: var(--background-color);
     padding: 0 4px;
     z-index: 1;

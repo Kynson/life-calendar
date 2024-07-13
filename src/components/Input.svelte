@@ -58,7 +58,7 @@
       checked = target.checked;
     }
 
-    if (target.type !== 'file') {
+    if (target.type === 'file') {
       files = target.files;
 
       selectedFileName = target.files?.item(0)?.name;

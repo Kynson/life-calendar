@@ -57,8 +57,8 @@
 
   let eventEditFormData: CalendarEvent = {
     name: '',
-    from: '',
-    to: '',
+    from: new Date().toISOString().split('T')[0],
+    to: new Date().toISOString().split('T')[0],
     color: '#ffffff'
   }
   let currentlyEditingEventIndex: number;
@@ -71,21 +71,62 @@
 
   let generatedCalendarSVG: Promise<string>;
   let isInitialGeneration = true;
+  let isCalendarGenerating = false;
+
+  let calendarMaximumHeight: number;
+
+  let calendarContainer: HTMLDivElement;
+  let calendarActionButtonsContainer: HTMLDivElement;
+  let calendarContainerHeader: HTMLHeadingElement;
 
   let eventEditDialog: HTMLDialogElement;
 
-  async function generateCalendar(): Promise<string> {
-    // Configurations are updated by form controls already
-    const { result } = await calendarGenerator.generate();
+  let invalidConfigurationsDialog: HTMLDialogElement;
 
-    if (isInitialGeneration) {
-      isInitialGeneration = false;
-    }
-
-    return result;
+  function shouldUseIntrinsicCalendarSize(intrinsicWidth: number, intrinsicHeight: number) {
+    const calendarContainerWidth = calendarContainer.clientWidth;
+    // calendarMaximumHeight is available after onMount
+    return intrinsicWidth < calendarContainerWidth && intrinsicHeight < calendarMaximumHeight;
   }
 
-  function handleFormSubmit() {
+  function injectSizeAttributesToCalendar(svg: string, intrinsicWidth: number, intrinsicHeight: number) {
+    const shouldUseIntrinsicSize = shouldUseIntrinsicCalendarSize(intrinsicWidth, intrinsicHeight);
+    const width = shouldUseIntrinsicSize ? intrinsicWidth.toString() : '100%';
+    const height = shouldUseIntrinsicSize ? intrinsicHeight.toString() : '100%';
+
+    return svg.replace(
+      '<svg',
+      `<svg width="${width}" height="${height}"`
+    );
+  }
+
+  function computeMaximumCalendarHeight() {
+    const calendarContainerHeight = calendarContainer.clientHeight;
+    const calendarContainerHeaderHeight = calendarContainerHeader.clientHeight;
+    const calendarActionButtonsContainerHeight = calendarActionButtonsContainer.clientHeight;
+
+    const calendarContainerHeaderMarginBottom = parseInt(getComputedStyle(calendarContainerHeader).marginBottom, 10);
+
+    return calendarContainerHeight - calendarContainerHeaderHeight - calendarActionButtonsContainerHeight - calendarContainerHeaderMarginBottom;
+  }
+
+  function generateCalendar() {
+    isCalendarGenerating = true;
+
+    // Configurations are updated by form controls already
+    return calendarGenerator.generate()
+      .then(({ result, width, height }) => {
+        isCalendarGenerating = false;
+
+        if (isInitialGeneration) {
+          isInitialGeneration = false;
+        }
+
+        return injectSizeAttributesToCalendar(result, width, height);
+      });
+  }
+
+  function handleGenerateCalendarFormSubmit() {
     generatedCalendarSVG = generateCalendar();
   }
 
@@ -94,7 +135,7 @@
     configurationsFromData.fontVariant = Object.keys(availableFonts[configurationsFromData.fontFamily])[0];
   }
 
-  function handleEventEditButtonClick(eventIndex: number) {
+  function handleEditEventButtonClick(eventIndex: number) {
     isNewEvent = false;
 
     const { name, from, to, color } = configurationsFromData.events[eventIndex];
@@ -118,8 +159,8 @@
 
     eventEditFormData = {
       name: '',
-      from: '',
-      to: '',
+      from: new Date().toISOString().split('T')[0],
+      to: new Date().toISOString().split('T')[0],
       color: '#ffffff'
     };
     currentlyEditingEventIndex = configurationsFromData.events.length;
@@ -127,7 +168,110 @@
     eventEditDialog.showModal();
   }
 
+  function handleDeleteEventButtonClick(eventIndex: number) {
+    configurationsFromData.events = configurationsFromData.events.toSpliced(eventIndex, 1);
+  }
+
+  function handleDownloadConfigurationsButtonClick() {
+    const configurationsBlob = new Blob(
+      [
+        JSON.stringify(configurationsFromData)
+      ],
+      { type: 'application/json' }
+    );
+    const configurationsBlobURL = URL.createObjectURL(configurationsBlob);
+
+    const downloadLink = document.createElement('a');
+    downloadLink.href = configurationsBlobURL;
+    downloadLink.download = 'life-calendar-configurations.json';
+    downloadLink.style.display = 'none';
+    downloadLink.click();
+  }
+
+  function isValidColor(value: any) {
+    return /^#[0-9a-f]{6}$/.test(value);
+  }
+
+  function isValidDate(value: any) {
+    return new Date(value).toString() !== 'Invalid Date';
+  }
+
+  function isValidEvent(value: Record<any, any>) {
+    return typeof value.name === 'string'
+      && typeof value.from === 'string' && isValidDate(value.from)
+      && typeof value.to === 'string' && isValidDate(value.to)
+      && isValidColor(value.color);
+  }
+
+  const configurationValidators = {
+    dateOfBirth: (value: any) => typeof value === 'string' && isValidDate(value),
+    title: (value: any) => typeof value === 'string',
+    numberOfYears: (value: any) => typeof value === 'string' && parseInt(value, 10) > 0,
+    showTitle: (value: any) => typeof value === 'boolean',
+    showEventLegends: (value: any) => typeof value === 'boolean',
+    showProgress: (value: any) => typeof value === 'boolean',
+    enableEmojiSupport: (value: any) => typeof value === 'boolean',
+    filledCellColor: (value: any) => typeof value === 'string' && isValidColor(value),
+    unfilledCellColor: (value: any) => typeof value === 'string' && isValidColor(value),
+    titleColor: (value: any) => typeof value === 'string' && isValidColor(value),
+    eventLegendsColor: (value: any) => typeof value === 'string' && isValidColor(value),
+    progressColor: (value: any) => typeof value === 'string' && isValidColor(value),
+    direction: (value: any) => typeof value === 'boolean',
+    fontFamily: (value: any) => typeof value === 'string',
+    fontVariant: (value: any) => typeof value === 'string',
+    events: (value: any) => Array.isArray(value) && value.every(isValidEvent)
+  }
+
+  // While the gernerator lib can validate the configurations,
+  // we don't want invalid data to be rendered in the form
+  // This function only checks the structure of the configurations data so that they can be rendered correctly
+  function isValidConfigurationFormData(configurations: Record<any, any>) {
+    for (const [key, value] of Object.entries(configurations)) {
+      if (!configurationValidators[key](value)) {
+        console.log(key, value)
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  async function handleConfigurationsUpload({ detail: event }: CustomEvent<Event>) {
+    const target = event.target as HTMLInputElement;
+
+    const configurationsFile = target.files?.item(0)
+
+    if (!configurationsFile) {
+      return;
+    }
+
+    
+    let configurations: Record<any, any>;
+    try {
+      configurations = JSON.parse(await configurationsFile.text());
+    } catch (_error) {
+      invalidConfigurationsDialog.showModal();
+  
+      return;
+    }
+
+    if (!isValidConfigurationFormData(configurations)) {
+      invalidConfigurationsDialog.showModal();
+  
+      return;
+    }
+
+    configurationsFromData = {
+      ...configurationsFromData,
+      ...configurations
+    }
+    // calendarGenerator.updateConfigurations(configurations);
+    // configurationsFromData = configurationsFromData;
+  }
+
   onMount(async () => {
+    calendarMaximumHeight = computeMaximumCalendarHeight();
+
     await calendarGenerator.initialize();
 
     availableFonts = calendarGenerator.availableFonts;
@@ -152,18 +296,23 @@
   <form class="flex flex-column small-text" on:submit|preventDefault>
     <Input type="text" label="Event Name" name="eventName" bind:value={eventEditFormData.name}></Input>
     <div class="flex flex-gap-1">
-      <Input type="date" label="From" class="flex-grow-1"></Input>
-      <Input type="date" label="To" class="flex-grow-1"></Input>
+      <Input type="date" label="From" name="eventFrom" class="flex-grow-1" bind:value={eventEditFormData.from}></Input>
+      <Input type="date" label="To" name="eventTo" class="flex-grow-1" bind:value={eventEditFormData.to}></Input>
     </div>
-    <Input type="color" label="Event Color" name="eventColor" bind:value={eventEditFormData.color}></Input>
+    <Input type="color" label="Event Color" name="eventColor" class="margin-bottom-1" bind:value={eventEditFormData.color}></Input>
     <div id="event-edit-form-actions-container" class="flex">
       <Button type="button" variant="outlined" on:click={() => eventEditDialog.close('cancelled')}>Cancel</Button>
       <Button type="submit" on:click={() => eventEditDialog.close('submit')}>Save</Button>
     </div>
   </form>
 </dialog>
+<dialog bind:this={invalidConfigurationsDialog}>
+  <h6>Invalid Configurations</h6>
+  <p class="low-emphasis small-text">Fail to parse the uploaded configurations as it is invalid. Please check your configurations and try again</p>
+  <Button class="float-right" on:click={() => invalidConfigurationsDialog.close()}>Close</Button>
+</dialog>
 <section id="generator" class="flex flex-wrap">
-  <form id="generation-form" class="flex flex-column small-text flex-justify-center" on:submit|preventDefault={handleFormSubmit}>
+  <form id="generation-form" class="flex flex-column small-text flex-justify-center" on:submit|preventDefault={handleGenerateCalendarFormSubmit}>
     <h5>General</h5>
     <Input type="date" label="Date of Birth" name="dateOfBirth" bind:value={configurationsFromData.dateOfBirth}></Input>
     <Input type="text" label="Title" name="title" disabled={!configurationsFromData.showTitle} bind:value={configurationsFromData.title}></Input>
@@ -202,36 +351,40 @@
         <div class="flex flex-space-between event-container">
           <div class="flex">
             <div class="event-color-indicator" style="background-color: {event.color}"></div>
-            <p>{event.name}</p>
+            <Button variant="link" on:click={() => handleEditEventButtonClick(index)}>{event.name} <i class="low-emphasis">{event.from} to {event.to}</i></Button>
           </div>
-          <Button variant="mini-icon" class="event-edit-button" on:click={() => handleEventEditButtonClick(index)}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M21.731 2.269a2.625 2.625 0 0 0-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 0 0 0-3.712ZM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 0 0-1.32 2.214l-.8 2.685a.75.75 0 0 0 .933.933l2.685-.8a5.25 5.25 0 0 0 2.214-1.32L19.513 8.2Z" />
-            </svg>            
+          <Button variant="mini-icon" class="event-delete-button" on:click={() => handleDeleteEventButtonClick(index)}>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>                    
           </Button>      
         </div>
       {/each}
     {/if}
     <Button variant="outlined" on:click={handleAddEventButtonClick}>Add Event</Button>
     <Separator>Or upload an existing calendar</Separator>
-    <Input type="file" label="Calendar"></Input>
+    <Input type="file" label="Calendar" on:input={handleConfigurationsUpload}></Input>
     <Button type="submit">Generate!</Button>
   </form>
-  <div id="calendar-container" class="flex flex-column">
-    <h5>Generated Calendar</h5>
+  <div id="calendar-container" class="flex flex-column" bind:this={calendarContainer}>
+    <h5 bind:this={calendarContainerHeader}>Generated Calendar</h5>
     {#if generatedCalendarSVG}
       {#await generatedCalendarSVG}
-        <p>{isInitialGeneration ? 'Generating' : 'Re-regenerating'}</p>
-      {:then calendarSVG} 
-        {@html calendarSVG}
-        <div class="flex flex-gap-1">
-          <Button type="button">Copy link</Button>
-          <Button type="button" variant="outlined">Download Configurations</Button>
+        <p>{isInitialGeneration ? 'Generating' : 'Re-generating'}</p>
+      {:then svg}
+        <div style="max-height: {calendarMaximumHeight}px">
+          {@html svg}
         </div>
+      {:catch error}
+        <p>Failed to load the calendar. {error}</p>
       {/await}
     {:else}
       <p>Fill the form and generate your life calendar!</p>
     {/if}
+    <div class="flex flex-gap-1" class:invisible={isCalendarGenerating || !generatedCalendarSVG} bind:this={calendarActionButtonsContainer}>
+      <Button>Copy link</Button>
+      <Button variant="outlined" on:click={handleDownloadConfigurationsButtonClick}>Download Configurations</Button>
+    </div>
   </div>
 </section>
 <section>
@@ -349,25 +502,24 @@
   }
 
   #event-edit-form-actions-container {
-    /* We can't style the buttons so we add margin here */
-    margin-top: 1rem;
     justify-content: flex-end;
     gap: 0 1.25rem;
   }
 
-  .event-container p {
-    margin: auto 0;
+  .dialog-actions-container {
+    /* We can't style the buttons so we add margin here */
+    margin-top: 1rem;
   }
 
   /* Opt out scoping for this, so that it can be leaked to components */
-  :global(.event-edit-button) {
+  :global(.event-delete-button) {
     opacity: 0;
     /* Overrides the button's style */
     transition: background-color .2s, opacity .2s !important;
   }
 
   /* Opt out scoping for this, so that it can be leaked to components */
-  .event-container:hover :global(.event-edit-button) {
+  .event-container:hover :global(.event-delete-button) {
     opacity: 1;
   }
 
@@ -385,6 +537,18 @@
   }
   :global(.flex-gap-1) {
     gap: 1rem;
+  }
+
+  :global(.margin-bottom-1) {
+    margin-bottom: 1rem;
+  }
+
+  :global(.float-right) {
+    float: right;
+  }
+
+  .invisible {
+    visibility: hidden;
   }
 
   @media (min-width: 480px) {

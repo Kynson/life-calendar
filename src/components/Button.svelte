@@ -2,7 +2,7 @@
 <script lang="ts">
   import type { HTMLButtonAttributes } from "svelte/elements";
 
-  export let variant: 'filled' | 'outlined' | 'mini-icon' = 'filled';
+  export let variant: 'filled' | 'outlined' | 'mini-icon' | 'link' = 'filled';
   export let type: HTMLButtonAttributes['type'] = 'button';
   
   let clazz = '';
@@ -10,14 +10,13 @@
 </script>
 
 <!-- Button contents -->
-<button {type} class:filled={variant === 'filled'} class:outlined={variant === 'outlined'} class:mini-icon={variant === 'mini-icon'} class="small-text {clazz}" on:click>
+<button {type} class:filled={variant === 'filled'} class:outlined={variant === 'outlined'} class:mini-icon={variant === 'mini-icon'} class:link={variant === 'link'} class="{clazz}" on:click>
   <slot></slot>
 </button>
 
 <!-- Button styles -->
 <style>
   button {
-    padding: 0.5rem 1.25rem;
     font-weight: 500;
     font-family: inherit;
     cursor: pointer;
@@ -25,6 +24,7 @@
   }
 
   button:is(.filled, .outlined) {
+    padding: 0.5rem 1.25rem;
     border-radius: 8px;
     min-width: 36px;
   }
@@ -76,5 +76,11 @@
   button.mini-icon:focus,
   button.mini-icon:focus-visible {
     padding: .25rem;
+  }
+
+  button.link {
+    background-color: transparent;
+    padding: 0;
+    border: none;
   }
 </style>
