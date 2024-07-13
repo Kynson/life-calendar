@@ -399,7 +399,7 @@
   <h2>What is this?</h2>
   <p>Life is limited. Life calendar reminds us of the inevitable flow of time by recording the number of weeks that have passed since our birthdays. Each filled cell on the calendar represents a week that has elapsed, illustrating how our lives are made of a finite number of units. Hope it serves as a gentle reminder to live each week to the fullest.</p>
   <p>You can generate your own life calendar using above generator and embed it on your own website, markdown or anywhere you like (as long as it supports rendering remote svg)! You can customize the theme of the calendar, number of years displayed and mark events that are special in your life.</p>
-  <p>This project aims to provide an open source and more feature-rich version of Luca Gesmundo's <a href="https://notionsparkles.com/life-calendar">The Notion Life Calendar</a>, please also check it out! Source code of this project is available on Github.</p>
+  <p>This project aims to provide an open source and more feature-rich version of Luca Gesmundo's <a href="https://notionsparkles.com/life-calendar">The Notion Life Calendar</a>, please also check it out! Source code of this project is available on <a href="https://github.com/Kynson/life-calendar">Github</a>.</p>
 </section>
 
 <!-- App styles -->
